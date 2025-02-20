@@ -1,17 +1,18 @@
 package main
 
 import (
-	"encoding/base64"
 	"fmt"
 	"io"
 	"net/http"
+	"os"
+	"path/filepath"
+	"strings"
 
 	"github.com/bootdotdev/learn-file-storage-s3-golang-starter/internal/auth"
 	"github.com/google/uuid"
 )
 
 const maxMemory = 10 << 20 // 10mb
-const ctmsg = "couldn't find Content-Type"
 
 func (cfg *apiConfig) handlerUploadThumbnail(w http.ResponseWriter, r *http.Request) {
 	videoIDString := r.PathValue("videoID")
@@ -36,17 +37,33 @@ func (cfg *apiConfig) handlerUploadThumbnail(w http.ResponseWriter, r *http.Requ
 	fmt.Println("uploading thumbnail for video", videoID, "by user", userID)
 
 	err = r.ParseMultipartForm(maxMemory)
+	if err != nil {
+		respondWithError(w, 500, "failure parsing multipart form", err)
+		return
+	}
+
 	file, fileheader, err := r.FormFile("thumbnail")
 	if err != nil {
 		respondWithError(w, 500, "error reading thumbnail", err)
 	}
 	defer file.Close()
 
-	data, err := io.ReadAll(file)
-	if err != nil {
-		respondWithError(w, 500, "error reading file", err)
-		return
+	ct := fileheader.Header.Get("Content-Type")
+	parts := strings.Split(ct, "/")
+	ext := parts[len(parts)-1]
 
+	filename := filepath.Join(cfg.assetsRoot, videoID.String() + "." + ext)
+	fp, err := os.Create(filename)
+	if err != nil {
+		respondWithError(w, 500, "error creating file", err)
+		return
+	}
+	defer fp.Close()
+
+	n, err := io.Copy(fp, file)
+	if err != nil || n != fileheader.Size {
+		respondWithError(w, 500, "error writing to file", err)
+		return
 	}
 
 	videoInfo, err := cfg.db.GetVideo(videoID)
@@ -59,9 +76,7 @@ func (cfg *apiConfig) handlerUploadThumbnail(w http.ResponseWriter, r *http.Requ
 		respondWithJSON(w, http.StatusUnauthorized, struct{}{})
 	}
 
-	ct := fileheader.Header.Get("Content-Type")
-	b64 := base64.StdEncoding.EncodeToString(data)
-	url := fmt.Sprintf("data:%s;base64,%s", ct, b64)
+	url := fmt.Sprintf("http://localhost:%s/%s", os.Getenv("PORT"), filename)
 	videoInfo.ThumbnailURL = &url
 	err = cfg.db.UpdateVideo(videoInfo)
 	if err != nil {
