@@ -87,6 +87,12 @@ func (cfg *apiConfig) handlerUploadVideo(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
+	as, err := getVideoAspectRatio(fp.Name())
+	if err != nil {
+		respondWithError(w, 500, "getVideoAspectRatio", err)
+		return
+	}
+
 	n, err = fp.Seek(0, io.SeekStart)
 	if err != nil || n != 0 {
 		respondWithError(w, 500, "something went wrong", err)
@@ -103,6 +109,13 @@ func (cfg *apiConfig) handlerUploadVideo(w http.ResponseWriter, r *http.Request)
 	}
 	rndb64 := base64.RawURLEncoding.EncodeToString(rnd)
 	key := rndb64 + "." + ext
+	if as == "16:9" {
+		key = "landscape/" + key
+	}	else if as == "9:16" {
+		key = "portrait/" + key
+	} else {
+		key = "other/" + key
+	}
 
 	_, err = cfg.s3Client.PutObject(r.Context(), &s3.PutObjectInput{
 		// Bucket: aws.String(bucket),
