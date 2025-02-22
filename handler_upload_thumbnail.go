@@ -67,7 +67,11 @@ func (cfg *apiConfig) handlerUploadThumbnail(w http.ResponseWriter, r *http.Requ
 	ext := parts[len(parts)-1]
 
 	rnd := make([]byte, 32)
-	rand.Read(rnd)
+	n2, err := rand.Read(rnd)
+	if err != nil || n2 != len(rnd) {
+		respondWithError(w, 500, "something went wrong", err)
+		return
+	}
 	rndb64 := base64.RawURLEncoding.EncodeToString(rnd)
 	filename := filepath.Join(cfg.assetsRoot, rndb64 + "." + ext)
 	fp, err := os.Create(filename)
